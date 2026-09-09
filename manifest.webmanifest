@@ -1,0 +1,33 @@
+{
+  "name": "旅行衣橱管家",
+  "short_name": "衣橱管家",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#F7F4EF",
+  "theme_color": "#C05F3C",
+  "description": "智能旅行穿搭与行李管家：衣橱拍照建档、分类浏览、出行打包清单",
+  "dir": "ltr",
+  "lang": "zh-CN",
+  "categories": ["lifestyle", "travel", "utilities"],
+  "icons": [
+    {
+      "src": "./icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "./icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "./icons/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    }
+  ]
+}
