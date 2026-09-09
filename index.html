@@ -241,6 +241,15 @@
       font-size: 11px; line-height: 14px; background: var(--green-bg); color: var(--green-text);
     }
     .s2-item-tag.tag-warm { background: var(--amber-bg); color: var(--amber-text); }
+    .s2-empty {
+      grid-column: 1 / -1;
+      padding: 60px 24px;
+      text-align: center;
+      color: var(--muted);
+    }
+    .s2-empty-emoji { font-size: 48px; line-height: 1; margin-bottom: 12px; }
+    .s2-empty-title { font-size: 16px; font-weight: 600; color: var(--text); margin-bottom: 6px; }
+    .s2-empty-desc { font-size: 13px; color: var(--muted); }
     .s2-fab {
       position: absolute; right: 16px; bottom: 110px;
       width: 56px; height: 56px; border-radius: 28px;
@@ -744,41 +753,41 @@
         <div class="s1-overview">
           <div class="s1-overview-left">
             <div class="s1-overview-label">衣橱单品总数</div>
-            <div class="s1-overview-num">86<span>件</span></div>
-            <div class="s1-overview-desc">可组合 32 套不重复搭配</div>
+            <div class="s1-overview-num">0<span>件</span></div>
+            <div class="s1-overview-desc">上传第一件衣物，自动开始搭配</div>
           </div>
           <div class="s1-divider"></div>
           <div class="s1-overview-right">
-            <div class="s1-overview-new">+4</div>
+            <div class="s1-overview-new">+0</div>
             <div class="s1-overview-new-label">本周新增</div>
           </div>
         </div>
 
         <div class="s1-list-entry" data-goto="s2">
-          查看全部 86 件单品
+          查看全部 0 件单品
           <svg width="16" height="16"><use href="#icon-arrow"/></svg>
         </div>
 
         <div class="s1-grid">
           <div class="s1-cat">
             <div class="s1-cat-name">上衣</div>
-            <div class="s1-cat-num">28<span>件</span></div>
-            <div class="s1-cat-bar"><div class="s1-cat-bar-fill" style="width:70%"></div></div>
+            <div class="s1-cat-num">0<span>件</span></div>
+            <div class="s1-cat-bar"><div class="s1-cat-bar-fill" style="width:0%"></div></div>
           </div>
           <div class="s1-cat">
             <div class="s1-cat-name">下装</div>
-            <div class="s1-cat-num">18<span>件</span></div>
-            <div class="s1-cat-bar"><div class="s1-cat-bar-fill" style="width:45%"></div></div>
+            <div class="s1-cat-num">0<span>件</span></div>
+            <div class="s1-cat-bar"><div class="s1-cat-bar-fill" style="width:0%"></div></div>
           </div>
           <div class="s1-cat">
             <div class="s1-cat-name">外套</div>
-            <div class="s1-cat-num">12<span>件</span></div>
-            <div class="s1-cat-bar"><div class="s1-cat-bar-fill" style="width:30%"></div></div>
+            <div class="s1-cat-num">0<span>件</span></div>
+            <div class="s1-cat-bar"><div class="s1-cat-bar-fill" style="width:0%"></div></div>
           </div>
           <div class="s1-cat">
             <div class="s1-cat-name">鞋帽配饰</div>
-            <div class="s1-cat-num">28<span>件</span></div>
-            <div class="s1-cat-bar"><div class="s1-cat-bar-fill" style="width:70%"></div></div>
+            <div class="s1-cat-num">0<span>件</span></div>
+            <div class="s1-cat-bar"><div class="s1-cat-bar-fill" style="width:0%"></div></div>
           </div>
         </div>
 
@@ -815,7 +824,7 @@
             <svg width="18" height="18"><use href="#icon-arrow"/></svg>
             我的衣橱
           </div>
-          <div class="s2-count-pill">86 件</div>
+          <div class="s2-count-pill">0 件</div>
         </div>
 
         <div class="s2-search">
@@ -832,25 +841,10 @@
         </div>
 
         <div class="s2-grid" id="grid-s2">
-          <div class="s2-item" data-cat="上衣">
-            <div class="s2-item-img s2-img-shirt"></div>
-            <div class="s2-item-name">白色亚麻衬衫</div>
-            <div class="s2-item-tag">百搭基础</div>
-          </div>
-          <div class="s2-item" data-cat="外套">
-            <div class="s2-item-img s2-img-trench"></div>
-            <div class="s2-item-name">卡其色风衣</div>
-            <div class="s2-item-tag">防风</div>
-          </div>
-          <div class="s2-item" data-cat="鞋帽配饰">
-            <div class="s2-item-img s2-img-shawl"></div>
-            <div class="s2-item-name">民族风披肩</div>
-            <div class="s2-item-tag tag-warm">出片</div>
-          </div>
-          <div class="s2-item" data-cat="下装">
-            <div class="s2-item-img s2-img-jeans"></div>
-            <div class="s2-item-name">直筒牛仔裤</div>
-            <div class="s2-item-tag">百搭</div>
+          <div class="s2-empty" id="s2-empty" hidden>
+            <div class="s2-empty-emoji">👚</div>
+            <div class="s2-empty-title">衣橱还是空的</div>
+            <div class="s2-empty-desc">点右下角「+」添加你的第一件衣物</div>
           </div>
         </div>
       </div>
@@ -1339,7 +1333,7 @@
   'use strict';
 
   var LS_KEY = 'wardrobeAppV1';
-  var CAT_BASE = { '上衣': 28, '下装': 18, '外套': 12, '鞋帽配饰': 28 };
+  var CAT_BASE = { '上衣': 0, '下装': 0, '外套': 0, '鞋帽配饰': 0 };
   var CAT_ORDER = ['上衣', '下装', '外套', '鞋帽配饰'];
   var PALETTE = [
     ['黑色', '#2B2623'], ['深灰', '#4B4B4B'], ['中灰', '#9A9388'], ['浅灰', '#D8D2C7'],
@@ -1757,7 +1751,7 @@
 
   /* S1 统计 / S2 计数联动 */
   function updateWardrobeCounts() {
-    var total = 86 + state.added.length;
+    var total = state.added.length;
     var per = { '上衣': CAT_BASE['上衣'], '下装': CAT_BASE['下装'], '外套': CAT_BASE['外套'], '鞋帽配饰': CAT_BASE['鞋帽配饰'] };
     state.added.forEach(function (a) { if (per[a.cat] != null) per[a.cat]++; });
 
@@ -1769,11 +1763,11 @@
       var el = cats[i] && cats[i].querySelector('.s1-cat-num');
       if (el) el.innerHTML = per[c] + '<span>件</span>';
       var fill = cats[i] && cats[i].querySelector('.s1-cat-bar-fill');
-      if (fill) fill.style.width = Math.min(100, Math.round(per[c] / 40 * 100)) + '%';
+      if (fill) fill.style.width = per[c] > 0 ? Math.min(100, Math.round(per[c] / 20 * 100)) + '%' : '0%';
     });
 
     var wk = $('.s1-overview-new');
-    if (wk) wk.textContent = '+' + (4 + state.added.length);
+    if (wk) wk.textContent = '+' + state.added.length;
 
     var entry = $('.s1-list-entry');
     if (entry && entry.firstChild && entry.firstChild.nodeType === 3) {
@@ -1781,47 +1775,37 @@
     }
     var pill = $('.s2-count-pill');
     if (pill) pill.textContent = total + ' 件';
+
+    // 温度覆盖：0 件时全部归零
+    var tempPct = state.added.length === 0 ? 0 : Math.min(100, 30 + Math.round(state.added.length * 5));
+    $$('.s1-temp-track-fill').forEach(function (el) { el.style.width = tempPct + '%'; });
+    $$('.s1-temp-value').forEach(function (el) { el.textContent = tempPct + '%'; });
+    var tempTip = $('.s1-temp-tip');
+    if (tempTip) {
+      tempTip.textContent = state.added.length === 0
+        ? '上传衣物后自动评估 0–24°C 行程温度覆盖'
+        : '基于现有 ' + state.added.length + ' 件衣物估算温度覆盖';
+    }
+
+    // 搭配套数动态估算：上衣 × 下装 × max(1,外套)
+    var combos = per['上衣'] * per['下装'] * Math.max(1, per['外套']);
+    var desc = $('.s1-overview-desc');
+    if (desc) {
+      var shown = total < 2 ? 0 : Math.min(99, combos);
+      desc.textContent = total === 0
+        ? '上传第一件衣物，自动开始搭配'
+        : '可组合 ' + shown + ' 套不重复搭配';
+    }
   }
 
   /* =========================================================
-     二、S4 穿搭：根据衣橱动态生成
+     二、S4 穿搭：根据衣橱动态生成（只用真实上传的衣物）
      ========================================================= */
-  // 示例衣橱（仅在没有真实数据时作为兜底，物品带颜色不带图）
-  var SEED_POOL = {
-    '上衣': [
-      { name: '白色衬衫', color: '#F2EDE4', letter: '白' },
-      { name: '条纹针织', color: '#D6C9B0', letter: '条' },
-      { name: '雾蓝毛衣', color: '#9FB4C9', letter: '蓝' },
-      { name: '米色T恤', color: '#E8DCC7', letter: '米' }
-    ],
-    '下装': [
-      { name: '深色牛仔裤', color: '#3D4D63', letter: '牛' },
-      { name: '卡其阔腿裤', color: '#9A8866', letter: '卡' },
-      { name: '黑色直筒裤', color: '#2B2623', letter: '黑' }
-    ],
-    '外套': [
-      { name: '驼色风衣', color: '#C7B596', letter: '驼' },
-      { name: '深灰羽绒', color: '#4A4A4A', letter: '灰' },
-      { name: '雾霾蓝大衣', color: '#7C8AA0', letter: '大' }
-    ],
-    '鞋帽配饰': [
-      { name: '棕色短靴', color: '#7B4F2E', letter: '靴' },
-      { name: '白色帆布鞋', color: '#EFEAE2', letter: '鞋' },
-      { name: '针织冷帽', color: '#5C4A3A', letter: '帽' },
-      { name: '帆布包', color: '#A89378', letter: '包' }
-    ]
-  };
-
   function getWardrobePool() {
-    // 合并真实上传 + 示例池，按 cat 分组
+    // 只使用真实上传的衣物，0 件时返回空池
     var pool = { '上衣': [], '下装': [], '外套': [], '鞋帽配饰': [] };
     state.added.forEach(function (it) {
       if (pool[it.cat]) pool[it.cat].push(it);
-    });
-    Object.keys(SEED_POOL).forEach(function (k) {
-      SEED_POOL[k].forEach(function (s) {
-        pool[k].push({ name: s.name, color: s.color, colorName: s.letter, letter: s.letter, seed: true });
-      });
     });
     return pool;
   }
@@ -1853,7 +1837,7 @@
     var heroImg = head ? ('background-image:url(\'' + head + '\')') : '';
     var heroBg = head ? '' : ('background:' + (set.out.color || set.top.color || '#C7B596'));
     var label = 'Day ' + (idx + 1);
-    var srcTag = set.top.seed ? '示例衣橱' : '你的衣橱';
+    var srcTag = '你的衣橱';
     var desc = (set.out.name || '') + ' + ' + (set.top.name || '') + ' + ' + (set.bot.name || '') + '，搭配 ' + (set.acc.name || '');
     var tags = [set.out.colorName || set.out.name, set.top.colorName || set.top.name, set.bot.colorName || set.bot.name, set.acc.colorName || set.acc.name]
       .filter(Boolean).slice(0, 3);
@@ -2043,6 +2027,8 @@
     updateWardrobeCounts();
     clearUploadCards();
     state.added.forEach(function (it) { addWardrobeCard(it); });
+    var empty = $('#s2-empty');
+    if (empty) empty.hidden = state.added.length > 0;
     applyS2View();
     renderOutfits();
     var s5 = $('.screen[data-screen="s5"]');
