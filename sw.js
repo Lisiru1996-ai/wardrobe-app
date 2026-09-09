@@ -1,5 +1,5 @@
 /* Service Worker for 旅行衣橱管家 PWA */
-const CACHE = 'wardrobe-pwa-v1';
+const CACHE = 'wardrobe-pwa-v2';
 const CORE = [
   './',
   './index.html',
@@ -43,23 +43,39 @@ self.addEventListener('fetch', function (e) {
 
   if (req.method !== 'GET') return;
 
+  // 页面导航：网络优先（有网永远拿最新版），失败才回退缓存 → 保证更新能到达用户
+  if (req.mode === 'navigate') {
+    e.respondWith(
+      fetch(req).then(function (resp) {
+        if (resp && resp.ok) {
+          const copy = resp.clone();
+          caches.open(CACHE).then(function (c) {
+            c.put(req, copy);
+            c.put('./index.html', copy);
+          });
+        }
+        return resp;
+      }).catch(function () {
+        return caches.match(req).then(function (hit) {
+          return hit || caches.match('./index.html');
+        });
+      })
+    );
+    return;
+  }
+
+  // 静态资源：缓存优先，离线可用
   e.respondWith(
     caches.match(req).then(function (cached) {
       if (cached) return cached;
       return fetch(req).then(function (resp) {
         const copy = resp.clone();
-        // 只缓存同源核心资源与字体，避免其它请求报错
         if (url.origin === self.location.origin || isFont) {
           caches.open(CACHE).then(function (c) {
             c.put(req, copy);
           });
         }
         return resp;
-      }).catch(function () {
-        // 离线时导航请求回退首页
-        if (req.mode === 'navigate') {
-          return caches.match('./index.html');
-        }
       });
     })
   );
