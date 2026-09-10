@@ -1,5 +1,5 @@
 /* Service Worker for 旅行衣橱管家 PWA */
-const CACHE = 'wardrobe-pwa-v3';
+const CACHE = 'wardrobe-pwa-v4';
 const CORE = [
   './',
   './index.html',

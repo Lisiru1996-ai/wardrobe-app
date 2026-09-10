@@ -1374,6 +1374,172 @@
   })();
   var noneWarned = false;
 
+  /* =========================================================
+     照片仓库：IndexedDB 优先（可存数百张，容量远大于 localStorage）；
+     环境不支持时自动降级为「内联 base64」旧方案，保证不会坏掉。
+     衣物/想买数据里只保留 id，照片本体按 key 存在 IndexedDB。
+     ========================================================= */
+  var photoStore = (function () {
+    var DB = 'wardrobePhotosV1', STORE = 'photos', VER = 1;
+    var dbp = null, usable = null, mem = {};
+
+    function openDB() {
+      if (dbp) return dbp;
+      dbp = new Promise(function (res, rej) {
+        if (!window.indexedDB) { rej(new Error('no-idb')); return; }
+        var rq;
+        try { rq = indexedDB.open(DB, VER); } catch (e) { rej(e); return; }
+        rq.onupgradeneeded = function () {
+          var db = rq.result;
+          if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE);
+        };
+        rq.onsuccess = function () { res(rq.result); };
+        rq.onerror = function () { rej(rq.error || new Error('idb-error')); };
+        rq.onblocked = function () { rej(new Error('idb-blocked')); };
+      });
+      return dbp;
+    }
+
+    function ready() {
+      if (usable !== null) return Promise.resolve(usable);
+      return openDB().then(function () { usable = true; return true; },
+                           function () { usable = false; return false; });
+    }
+
+    function get(key) {
+      if (!key) return Promise.resolve(null);
+      if (mem[key] !== undefined) return Promise.resolve(mem[key]);
+      return openDB().then(function (db) {
+        return new Promise(function (res, rej) {
+          var rq = db.transaction(STORE, 'readonly').objectStore(STORE).get(key);
+          rq.onsuccess = function () { var v = rq.result || null; if (v) mem[key] = v; res(v); };
+          rq.onerror = function () { rej(rq.error); };
+        });
+      });
+    }
+
+    function put(key, val) {
+      if (!key) return Promise.resolve(false);
+      mem[key] = val;
+      return openDB().then(function (db) {
+        return new Promise(function (res, rej) {
+          var t = db.transaction(STORE, 'readwrite');
+          t.objectStore(STORE).put(val, key);
+          t.oncomplete = function () { res(true); };
+          t.onerror = function () { rej(t.error); };
+          t.onabort = function () { rej(t.error || new Error('abort')); };
+        });
+      });
+    }
+
+    function remove(key) {
+      if (!key) return Promise.resolve(false);
+      delete mem[key];
+      return openDB().then(function (db) {
+        return new Promise(function (res, rej) {
+          var t = db.transaction(STORE, 'readwrite');
+          t.objectStore(STORE).delete(key);
+          t.oncomplete = function () { res(true); };
+          t.onerror = function () { rej(t.error); };
+        });
+      });
+    }
+
+    function allMap() {
+      return openDB().then(function (db) {
+        return new Promise(function (res, rej) {
+          var out = {};
+          var rq = db.transaction(STORE, 'readonly').objectStore(STORE).openCursor();
+          rq.onsuccess = function () {
+            var c = rq.result;
+            if (c) { out[c.key] = c.value; c.continue(); } else { res(out); }
+          };
+          rq.onerror = function () { rej(rq.error); };
+        });
+      });
+    }
+
+    function putMap(map) {
+      var keys = Object.keys(map || {});
+      if (!keys.length) return Promise.resolve(0);
+      return openDB().then(function (db) {
+        return new Promise(function (res, rej) {
+          var t = db.transaction(STORE, 'readwrite');
+          var st = t.objectStore(STORE);
+          keys.forEach(function (k) { mem[k] = map[k]; st.put(map[k], k); });
+          t.oncomplete = function () { res(keys.length); };
+          t.onerror = function () { rej(t.error); };
+        });
+      });
+    }
+
+    return {
+      ready: ready, get: get, put: put, remove: remove,
+      allMap: allMap, putMap: putMap,
+      peek: function (k) { return k ? (mem[k] || null) : null; },
+      cache: function (k, v) { if (k && v) mem[k] = v; }
+    };
+  })();
+
+  /* 想买清单照片的 key（与衣橱物品 id 区分开） */
+  function wishPhotoKey(id) { return id ? ('s_' + id) : ''; }
+
+  /* 取照片地址：内联优先，其次内存缓存（均为同步可得） */
+  function imgSrcOf(item, key) {
+    if (!item) return '';
+    if (item.img) return item.img;
+    return photoStore.peek(key || item.id) || '';
+  }
+
+  /* 把照片画到元素上：能同步拿到就同步画，否则先占位、再异步回填 */
+  function paintImgEl(el, inlineImg, key, fallbackCss) {
+    if (!el) return;
+    if (inlineImg) { el.style.backgroundImage = "url('" + inlineImg + "')"; return; }
+    var hit = photoStore.peek(key);
+    if (hit) { el.style.backgroundImage = "url('" + hit + "')"; return; }
+    if (fallbackCss) el.style.background = fallbackCss;
+    if (!key) return;
+    photoStore.get(key).then(function (d) {
+      if (d) el.style.backgroundImage = "url('" + d + "')";
+    }, function () {});
+  }
+
+  /* 旧数据迁移：把内联的 base64 照片搬进 IndexedDB，state 里只留引用 */
+  function migrateInlinePhotos(done) {
+    photoStore.ready().then(function (ok) {
+      if (!ok) { done(false); return; }
+      ensureItemIds();
+      var jobs = [];
+      state.added.forEach(function (it) {
+        if (it.img && it.id) jobs.push({ key: it.id, obj: it });
+      });
+      (state.wishes || []).forEach(function (w) {
+        if (!w.id) w.id = 'w' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+        if (w.img) jobs.push({ key: wishPhotoKey(w.id), obj: w });
+      });
+      if (!jobs.length) { done(true); return; }
+      var left = jobs.length;
+      jobs.forEach(function (j) {
+        var finish = function () { if (--left === 0) { save(); done(true); } };
+        photoStore.put(j.key, j.obj.img).then(function () {
+          delete j.obj.img;
+          finish();
+        }, finish);
+      });
+    }, function () { done(false); });
+  }
+
+  /* 预热内存缓存：把已存照片一次性读进来，保证首屏同步渲染就有图 */
+  function warmupPhotos(done) {
+    photoStore.ready().then(function (ok) {
+      if (!ok) { done(); return; }
+      photoStore.allMap().then(function (map) {
+        Object.keys(map).forEach(function (k) { photoStore.cache(k, map[k]); });
+        done();
+      }, function () { done(); });
+    }, function () { done(); });
+  }
+
   function load() {
     var s = freshState();
     try {
@@ -1634,20 +1800,33 @@
     if (!name || !curW.cat) return;
     var item = {
       id: 'w' + Date.now() + Math.random().toString(36).slice(2, 7),
-      img: curW.img, name: name, cat: curW.cat,
+      name: name, cat: curW.cat,
       colorName: curW.colorName, colorHex: curW.colorHex, ts: Date.now()
     };
-    state.added.push(item);
-    save();
-    addWardrobeCard(item);
-    updateWardrobeCounts();
-    renderOutfits();
-    closeSheets();
-    toast('已存入衣橱 · ' + name);
-    var cur = document.querySelector('.screen.active');
-    if (!cur || cur.getAttribute('data-screen') !== 's2') {
-      if (window.showScreen) showScreen('s2');
+    var photo = curW.img || '';
+    function commitItem() {
+      state.added.push(item);
+      save();
+      addWardrobeCard(item);
+      updateWardrobeCounts();
+      renderOutfits();
+      closeSheets();
+      toast('已存入衣橱 · ' + name);
+      var cur = document.querySelector('.screen.active');
+      if (!cur || cur.getAttribute('data-screen') !== 's2') {
+        if (window.showScreen) showScreen('s2');
+      }
     }
+    photoStore.ready().then(function (ok) {
+      if (ok && photo) {
+        photoStore.put(item.id, photo).then(commitItem, function () {
+          item.img = photo; commitItem();
+        });
+      } else {
+        if (photo) item.img = photo;
+        commitItem();
+      }
+    });
   });
 
   function addWardrobeCard(it) {
@@ -1659,7 +1838,7 @@
     d.setAttribute('data-id', it.id || '');
     var img = document.createElement('div');
     img.className = 's2-item-img';
-    img.style.backgroundImage = "url('" + it.img + "')";
+    paintImgEl(img, it.img, it.id, 'linear-gradient(135deg, #F0EAE0 0%, #E8E3DB 100%)');
     var nm = document.createElement('div');
     nm.className = 's2-item-name';
     nm.textContent = it.name;
@@ -1702,7 +1881,11 @@
     wardrobeEditId = id;
     $('#wardrobe-edit-title').textContent = '编辑 · ' + it.name;
     $('#wardrobe-edit-name').value = it.name || '';
-    paintWardrobeEditImg(it.img);
+    var editSrc = imgSrcOf(it);
+    paintWardrobeEditImg(editSrc || null);
+    if (!editSrc) {
+      photoStore.get(it.id).then(function (d) { paintWardrobeEditImg(d || null); }, function () {});
+    }
     $$('#wardrobe-edit-cat .u-cat-chip').forEach(function (c) {
       c.classList.toggle('on', c.getAttribute('data-cat') === it.cat);
     });
@@ -1725,10 +1908,12 @@
     var it = findWardrobeItem(wardrobeEditId);
     if (!it) return;
     if (!confirm('确定删除「' + it.name + '」？')) return;
-    state.added = state.added.filter(function (x) { return x.id !== wardrobeEditId; });
+    var delId = wardrobeEditId;
+    state.added = state.added.filter(function (x) { return x.id !== delId; });
     wardrobeEditId = null;
     save(); rebuildAll(); closeSheets();
     toast('已删除');
+    photoStore.remove(delId).then(function () {}, function () {});
   });
   $('#btn-wardrobe-replace').addEventListener('click', function () { $('#wardrobe-edit-upload').click(); });
   $('#wardrobe-edit-upload').addEventListener('change', function (e) {
@@ -1736,9 +1921,15 @@
     var it = findWardrobeItem(wardrobeEditId);
     if (!it) return;
     readAndScale(file, function (durl) {
-      it.img = durl;
-      save(); paintWardrobeEditImg(durl); rebuildAll();
-      toast('照片已替换');
+      function done() { save(); paintWardrobeEditImg(durl); rebuildAll(); toast('照片已替换'); }
+      photoStore.ready().then(function (ok) {
+        if (ok) {
+          photoStore.put(it.id, durl).then(function () { delete it.img; done(); },
+                                            function () { it.img = durl; done(); });
+        } else {
+          it.img = durl; done();
+        }
+      });
     });
     e.target.value = '';
   });
@@ -1824,10 +2015,11 @@
 
   function renderThumb(item) {
     if (!item) return '';
-    if (item.img) {
-      return '<div class="s4-thumb" style="background-image:url(\'' + item.img + '\')"></div>';
+    var src = imgSrcOf(item);
+    if (src) {
+      return '<div class="s4-thumb" style="background-image:url(\'' + src + '\')"></div>';
     }
-    var bg = item.color || '#C7B596';
+    var bg = item.colorHex || item.color || '#C7B596';
     var ch = (item.letter || (item.name || '·').charAt(0));
     return '<div class="s4-thumb" style="background:' + bg + '"><span class="s4-thumb-letter">' + ch + '</span></div>';
   }
@@ -1835,10 +2027,13 @@
   function renderOutfitCard(set, idx, poolSize) {
     // 只保留实际存在的单品（类别缺失时自动省略）
     var parts = [set.out, set.top, set.bot, set.acc].filter(Boolean);
-    var hero = null;
-    for (var i = 0; i < parts.length; i++) { if (parts[i].img) { hero = parts[i]; break; } }
-    var heroImg = hero ? ('background-image:url(\'' + hero.img + '\')') : '';
-    var heroBg = hero ? '' : ('background:' + ((parts[0] && parts[0].color) || '#C7B596'));
+    var hero = null, heroSrc = '';
+    for (var i = 0; i < parts.length; i++) {
+      var cand = imgSrcOf(parts[i]);
+      if (cand) { hero = parts[i]; heroSrc = cand; break; }
+    }
+    var heroImg = heroSrc ? ('background-image:url(\'' + heroSrc + '\')') : '';
+    var heroBg = heroSrc ? '' : ('background:' + ((parts[0] && (parts[0].colorHex || parts[0].color)) || '#C7B596'));
     var label = 'Day ' + (idx + 1);
     var srcTag = '你的衣橱';
     var names = parts.map(function (p) { return p.name || ''; }).filter(Boolean);
@@ -1903,7 +2098,7 @@
       var s = makeOutfit(pool);
       if (!s) break;
       var key = [s.top, s.bot, s.out, s.acc].map(function (p) {
-        return p ? (p.img || p.name) : '-';
+        return p ? (p.id || p.img || p.name) : '-';
       }).join('|');
       if (seen[key]) continue;
       seen[key] = true;
@@ -1975,19 +2170,38 @@
     }
     dot.className = 'u-bkp-dot ' + m[0];
     tx.textContent = m[1];
+    /* 附加照片存储方式说明：便于用户自查容量是否安全 */
+    photoStore.ready().then(function (ok) {
+      var el = $('#bkp-text');
+      if (!el) return;
+      el.textContent = m[1] + (ok
+        ? ' 照片单独存放在大容量空间，可继续添加。'
+        : ' 当前环境照片随数据一起保存，数量多时请及时导出备份。');
+    }, function () {});
   }
 
   $('#bkp-export').addEventListener('click', function () {
-    var payload = { app: 'travel-wardrobe', ver: 1, exportedAt: new Date().toISOString(), state: state };
-    var blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-    var url = URL.createObjectURL(blob);
-    var a = document.createElement('a');
-    a.href = url;
-    a.download = '衣橱管家-备份-' + stamp() + '.json';
-    document.body.appendChild(a);
-    a.click();
-    setTimeout(function () { URL.revokeObjectURL(url); if (a.parentNode) a.parentNode.removeChild(a); }, 600);
-    toast('已导出备份文件');
+    photoStore.ready().then(function (ok) {
+      var grab = ok ? photoStore.allMap() : Promise.resolve({});
+      grab.then(function (photos) {
+        var payload = {
+          app: 'travel-wardrobe', ver: 2,
+          exportedAt: new Date().toISOString(),
+          state: state,
+          photos: photos || {}
+        };
+        var blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = '衣橱管家-备份-' + stamp() + '.json';
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(function () { URL.revokeObjectURL(url); if (a.parentNode) a.parentNode.removeChild(a); }, 600);
+        var n = Object.keys(photos || {}).length;
+        toast('已导出备份' + (n ? '（含 ' + n + ' 张照片）' : ''));
+      }, function () { toast('导出失败，请重试'); });
+    }, function () { toast('导出失败，请重试'); });
   });
 
   function stamp() {
@@ -2008,15 +2222,26 @@
         try {
           var obj = JSON.parse(rd.result);
           var src = (obj && obj.state && typeof obj.state === 'object') ? obj.state : obj;
+          var photos = (obj && obj.photos && typeof obj.photos === 'object') ? obj.photos : null;
           var s = freshState();
-          ['added', 'checks', 'edits', 'extras', 'seeded'].forEach(function (k) { if (k in src) s[k] = src[k]; });
+          ['added', 'checks', 'edits', 'extras', 'seeded', 'wishes'].forEach(function (k) { if (k in src) s[k] = src[k]; });
           if (!Array.isArray(s.added) || !Array.isArray(s.extras) || typeof s.checks !== 'object' || typeof s.edits !== 'object') {
             throw new Error('bad shape');
           }
           state = s;
-          rebuildAll();
-          var k = persist.write(JSON.stringify(state));
-          toast(k === 'none' ? '已导入（当前环境无法保存，请立即导出一次）' : '备份已导入');
+          function finishImport() {
+            rebuildAll();
+            var k = persist.write(JSON.stringify(state));
+            toast(k === 'none' ? '已导入（当前环境无法保存，请立即导出一次）' : '备份已导入');
+          }
+          if (photos) {
+            photoStore.ready().then(function (ok) {
+              if (ok) photoStore.putMap(photos).then(finishImport, finishImport);
+              else finishImport();
+            });
+          } else {
+            finishImport();
+          }
         } catch (e) {
           toast('导入失败：文件格式不正确');
         }
@@ -2319,15 +2544,29 @@
   /* =========================================================
      启动
      ========================================================= */
-  initChecklist();
-  recalc();
-  updateWardrobeCounts();
-  /* 刷新/重开时把已建档的“新上传”卡片也还原到 S2 */
-  state.added.forEach(function (it) { addWardrobeCard(it); });
-  applyS2View();
-  renderOutfits();
-  initWishes();
-  renderWishes();
+  function bootRender() {
+    initChecklist();
+    recalc();
+    updateWardrobeCounts();
+    /* 刷新/重开时把已建档的“新上传”卡片也还原到 S2 */
+    state.added.forEach(function (it) { addWardrobeCard(it); });
+    applyS2View();
+    renderOutfits();
+    initWishes();
+    renderWishes();
+  }
+  var booted = false;
+  function safeBoot() {
+    if (booted) return;
+    booted = true;
+    bootRender();
+  }
+  /* 先把旧照片迁进仓库、预热缓存，再渲染 —— 保证首屏就有图；
+     2.5s 兜底，避免存储异常时白屏 */
+  setTimeout(safeBoot, 2500);
+  migrateInlinePhotos(function () {
+    warmupPhotos(function () { safeBoot(); });
+  });
 
   if (persist.kind() !== 'local') {
     setTimeout(function () {
@@ -2440,8 +2679,9 @@
       timeHTML = '<div class="' + tmCls + '" data-deadline="' + deadline + '">' + fmtCountdown(remain) + '</div>';
     }
 
-    var thumbStyle = w.img ? 'background-image:url(\'' + w.img + '\');' : '';
-    var thumbInner = w.img ? '' : wishThumbChar(w.name);
+    var wsrc = imgSrcOf(w, wishPhotoKey(w.id));
+    var thumbStyle = wsrc ? 'background-image:url(\'' + wsrc + '\');' : '';
+    var thumbInner = wsrc ? '' : wishThumbChar(w.name);
 
     var priceHTML = w.price ? '<span class="sub-cat">¥' + w.price + '</span>' : '';
     var sceneHTML = w.scene ? '<span class="sub-cat">📍' + w.scene + '</span>' : '';
@@ -2593,7 +2833,7 @@
     document.getElementById('wish-inp-cool').value = d.coolHours || 72;
     document.getElementById('wish-inp-scene').value = d.scene || '';
     document.getElementById('wish-inp-note').value = d.note || '';
-    wishDraft.img = d.img || '';
+    wishDraft.img = imgSrcOf(d, wishPhotoKey(d.id));
     paintWishThumb();
     setWishCat(d.cat || '外套');
     setWishLevel(d.level || 'mid');
@@ -2671,17 +2911,45 @@
     var level = wishDraft.level || 'mid';
 
     var now = Date.now();
-    if (wishEditingId) {
-      var w = wishById(wishEditingId);
-      if (w) { w.name = name; w.cat = cat; w.level = level; w.price = price; w.coolHours = coolHours; w.scene = scene; w.note = note; w.img = wishDraft.img; w.updatedAt = now; }
-    } else {
-      state.wishes.push({ id: 'w' + now + '-' + Math.random().toString(36).slice(2, 6), name: name, cat: cat, level: level, price: price, coolHours: coolHours, scene: scene, note: note, img: wishDraft.img, status: 'cool', createdAt: now, updatedAt: now, decidedAt: 0 });
+    var editing = wishEditingId;
+    var photo = wishDraft.img || '';
+    var targetId = editing || ('w' + now + '-' + Math.random().toString(36).slice(2, 6));
+    var key = wishPhotoKey(targetId);
+
+    function finishWish(useStore) {
+      if (editing) {
+        var w = wishById(editing);
+        if (w) {
+          w.name = name; w.cat = cat; w.level = level; w.price = price;
+          w.coolHours = coolHours; w.scene = scene; w.note = note; w.updatedAt = now;
+          if (useStore) delete w.img; else w.img = photo;
+        }
+      } else {
+        var rec = {
+          id: targetId, name: name, cat: cat, level: level, price: price,
+          coolHours: coolHours, scene: scene, note: note,
+          status: 'cool', createdAt: now, updatedAt: now, decidedAt: 0
+        };
+        if (!useStore && photo) rec.img = photo;
+        state.wishes.push(rec);
+      }
+      save();
+      renderWishes();
+      closeSheets();
+      toast(editing ? '已更新' : '已加入冷静期');
+      wishEditingId = null;
     }
-    save();
-    renderWishes();
-    closeSheets();
-    toast(wishEditingId ? '已更新' : '已加入冷静期');
-    wishEditingId = null;
+
+    photoStore.ready().then(function (ok) {
+      if (!ok) { finishWish(false); return; }
+      if (photo) {
+        photoStore.put(key, photo).then(function () { finishWish(true); },
+                                          function () { finishWish(false); });
+      } else {
+        photoStore.remove(key).then(function () {}, function () {});
+        finishWish(true);
+      }
+    });
   });
 
   document.getElementById('btn-del-wish').addEventListener('click', function () {
@@ -2689,11 +2957,13 @@
     var w = wishById(wishEditingId);
     var name = w ? w.name : '这条';
     if (!confirm('确定删除「' + name + '」？')) return;
-    state.wishes = state.wishes.filter(function (x) { return x.id !== wishEditingId; });
+    var delId = wishEditingId;
+    state.wishes = state.wishes.filter(function (x) { return x.id !== delId; });
     save();
     renderWishes();
     closeSheets();
     toast('已删除');
+    photoStore.remove(wishPhotoKey(delId)).then(function () {}, function () {});
     wishEditingId = null;
   });
 
@@ -2709,20 +2979,34 @@
   function importWishToWardrobe(w) {
     var id = 'w' + Date.now();
     var pal = PALETTE.find(function (p) { return p[0] === '米色'; }) || ['米色', '#C7B596'];
+    var src = imgSrcOf(w, wishPhotoKey(w.id));
     var item = {
       id: id,
       name: w.name,
       cat: CAT_BASE[w.cat] != null ? w.cat : '其他',
       color: pal[1],
+      colorHex: pal[1],
       colorName: pal[0],
-      img: w.img || '',
       createdAt: Date.now()
     };
-    state.added.unshift(item);
-    save();
-    addWardrobeCard(item);
-    updateWardrobeCounts();
-    toast('「' + w.name + '」已加入衣橱');
+    function commit() {
+      state.added.unshift(item);
+      save();
+      addWardrobeCard(item);
+      updateWardrobeCounts();
+      toast('「' + w.name + '」已加入衣橱');
+    }
+    if (src) {
+      photoStore.ready().then(function (ok) {
+        if (ok) {
+          photoStore.put(id, src).then(commit, function () { item.img = src; commit(); });
+        } else {
+          item.img = src; commit();
+        }
+      });
+    } else {
+      commit();
+    }
   }
 
   function markDrop(id) {
