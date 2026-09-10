@@ -1817,7 +1817,8 @@
     var bot = pickRandom(pool['下装'] || []);
     var out = pickRandom(pool['外套'] || []);
     var acc = pickRandom(pool['鞋帽配饰'] || []);
-    if (!top || !bot || !out || !acc) return null;
+    // 只要衣橱里至少有 1 件，就据此生成（缺失的类别自动省略，不再要求四类齐全）
+    if (!top && !bot && !out && !acc) return null;
     return { top: top, bot: bot, out: out, acc: acc };
   }
 
@@ -1832,16 +1833,20 @@
   }
 
   function renderOutfitCard(set, idx, poolSize) {
-    var items = [set.out, set.top, set.bot, set.acc];
-    var head = set.top.img || set.out.img || set.bot.img || set.acc.img;
-    var heroImg = head ? ('background-image:url(\'' + head + '\')') : '';
-    var heroBg = head ? '' : ('background:' + (set.out.color || set.top.color || '#C7B596'));
+    // 只保留实际存在的单品（类别缺失时自动省略）
+    var parts = [set.out, set.top, set.bot, set.acc].filter(Boolean);
+    var hero = null;
+    for (var i = 0; i < parts.length; i++) { if (parts[i].img) { hero = parts[i]; break; } }
+    var heroImg = hero ? ('background-image:url(\'' + hero.img + '\')') : '';
+    var heroBg = hero ? '' : ('background:' + ((parts[0] && parts[0].color) || '#C7B596'));
     var label = 'Day ' + (idx + 1);
     var srcTag = '你的衣橱';
-    var desc = (set.out.name || '') + ' + ' + (set.top.name || '') + ' + ' + (set.bot.name || '') + '，搭配 ' + (set.acc.name || '');
-    var tags = [set.out.colorName || set.out.name, set.top.colorName || set.top.name, set.bot.colorName || set.bot.name, set.acc.colorName || set.acc.name]
+    var names = parts.map(function (p) { return p.name || ''; }).filter(Boolean);
+    var desc = names.join(' + ');
+    var tags = parts.map(function (p) { return p.colorName || p.name; })
       .filter(Boolean).slice(0, 3);
     var tagHtml = tags.map(function (t) { return '<div class="s4-tag">' + t + '</div>'; }).join('');
+    var thumbHtml = parts.map(renderThumb).join('');
     return ''
       + '<div class="s4-card">'
       +   '<div class="s4-card-img" style="' + heroImg + ';' + heroBg + '"></div>'
@@ -1853,9 +1858,7 @@
       +     '<div class="s4-card-temp">已搭配</div>'
       +   '</div>'
       +   '<div class="s4-card-tags">' + tagHtml + '</div>'
-      +   '<div class="s4-card-thumbs">'
-      +     renderThumb(set.out) + renderThumb(set.top) + renderThumb(set.bot) + renderThumb(set.acc)
-      +   '</div>'
+      +   '<div class="s4-card-thumbs">' + thumbHtml + '</div>'
       +   '<div class="s4-card-desc">' + desc + '</div>'
       + '</div>';
   }
@@ -1875,7 +1878,7 @@
     var note = document.getElementById('s4-source-note');
     if (note) note.textContent = '当前 0 件真实衣物';
     var btn = document.getElementById('btn-goto-s1');
-    if (btn) btn.addEventListener('click', function () { if (window.showScreen) showScreen('s1'); });
+    if (btn) btn.addEventListener('click', function () { if (window.showScreen) showScreen('s2'); });
   }
 
   function renderOutfits(refresh) {
@@ -1890,16 +1893,18 @@
       return;
     }
 
-    // 每类至少 1 件真实物品时，按真实衣橱生成；否则示例池凑数
+    // 只要衣橱有真实衣物就生成，件数越多给的方案越多（最多 3 套）
     var sets = [];
     var tries = 0;
-    var target = Math.min(3, Math.max(1, Math.floor(realCount / 2) || 1));
+    var target = Math.min(3, Math.max(1, realCount));
     var seen = {};
     while (sets.length < target && tries < 30) {
       tries++;
       var s = makeOutfit(pool);
       if (!s) break;
-      var key = (s.top.img || s.top.name) + '|' + (s.bot.img || s.bot.name) + '|' + (s.out.img || s.out.name) + '|' + (s.acc.img || s.acc.name);
+      var key = [s.top, s.bot, s.out, s.acc].map(function (p) {
+        return p ? (p.img || p.name) : '-';
+      }).join('|');
       if (seen[key]) continue;
       seen[key] = true;
       sets.push(s);
@@ -1909,7 +1914,13 @@
       return;
     }
     if (note) {
-      note.textContent = '基于 ' + realCount + ' 件真实衣物生成 ' + sets.length + ' 套 · 示例衣橱补齐';
+      // 提示还缺哪些类别，方便用户补齐后搭配更完整
+      var missing = CAT_ORDER.filter(function (c) { return (pool[c] || []).length === 0; });
+      var short = { '上衣': '上衣', '下装': '下装', '外套': '外套', '鞋帽配饰': '鞋帽配饰' };
+      var tip = missing.length
+        ? ' · 再补充' + missing.map(function (c) { return short[c]; }).join('、') + '搭配更完整'
+        : '';
+      note.textContent = '基于你的 ' + realCount + ' 件衣物生成 ' + sets.length + ' 套' + tip;
     }
     var html = sets.map(function (s, i) { return renderOutfitCard(s, i); }).join('');
     root.innerHTML = html;
